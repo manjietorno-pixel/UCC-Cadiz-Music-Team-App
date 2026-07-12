@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>UCC Cadiz Music Team Hub</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #EEF3FF; color: #1a2744; min-height: 100vh; }
+  input, select, textarea, button { font-family: inherit; }
+  pre { white-space: pre-wrap; word-break: break-word; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-thumb { background: #C0CADF; border-radius: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div id="root"><div style="text-align:center;padding:80px 20px;color:#6B7A99;font-family:system-ui">Loading UCC Cadiz Music Team Hub…</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin onerror="window.__scriptError='React'"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin onerror="window.__scriptError='ReactDOM'"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js" onerror="window.__scriptError='Firebase App'"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js" onerror="window.__scriptError='Firebase DB'"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js" onerror="window.__scriptError='Babel'"></script>
+<script>
+  (function() {
+    if (window.__scriptError) {
+      document.getElementById('root').innerHTML =
+        '<div style="text-align:center;padding:60px 20px;font-family:system-ui">' +
+        '<div style="font-size:40px;margin-bottom:16px">⚠️</div>' +
+        '<div style="font-size:18px;font-weight:700;color:#1B3A6B;margin-bottom:8px">Failed to load ' + window.__scriptError + '</div>' +
+        '<div style="color:#6B7A99;font-size:14px">Check your internet connection and refresh the page.</div>' +
+        '</div>';
+    }
+    setTimeout(function() {
+      var root = document.getElementById('root');
+      if (root && root.innerHTML.indexOf('Loading') !== -1) {
+        root.innerHTML =
+          '<div style="text-align:center;padding:60px 20px;font-family:system-ui">' +
+          '<div style="font-size:40px;margin-bottom:16px">⏳</div>' +
+          '<div style="font-size:18px;font-weight:700;color:#1B3A6B;margin-bottom:8px">Taking too long to load</div>' +
+          '<div style="color:#6B7A99;font-size:14px;margin-bottom:20px">A required script may be blocked or your connection is slow.</div>' +
+          '<button onclick="location.reload()" style="background:#1B3A6B;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer">Retry</button>' +
+          '</div>';
+      }
+    }, 12000);
+  })();
+</script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+// ── Firebase ─────────────────────────────────────────────────────
+// Same project as UCC Mati — data is isolated under "uccCadiz/" path.
+// Replace with your actual Firebase config if using a different project.
+const firebaseConfig = {
+  apiKey: "AIzaSyBQs0J9djNOgQRfGLcgV72Fye59FWQtPBc",
+  authDomain: "ucc-mati-music-team.firebaseapp.com",
+  databaseURL: "https://ucc-mati-music-team-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "ucc-mati-music-team",
+  storageBucket: "ucc-mati-music-team.firebasestorage.app",
+  messagingSenderId: "593229005112",
+  appId: "1:593229005112:web:504c3452399b53f3d1c1cd"
+};
+
+// All UCC Cadiz data lives under this prefix — completely separate from UCC Mati.
+const DB_ROOT = "uccCadiz";
+
+let db = null;
+try {
+  // Use a named app to avoid collision if UCC Mati hub is ever open in same session
+  const app = firebase.initializeApp(firebaseConfig, "uccCadiz");
+  db = firebase.database(app);
+} catch(e) { console.error("Firebase init failed:", e); }
+
+// ── Access Control ───────────────────────────────────────────────
+// Passwords are stored here in plaintext — suitable for a small internal church tool
+// with no sensitive personal data. Change these to whatever you want.
+// Admin can add/edit/delete everything. Viewer sees everything but cannot change data.
+const ADMIN_PASSWORD  = "cadiz2025admin";   // ← change this
+// No viewer password needed — view-only is open to anyone with the link.
+// Admin login appears as a small button in the header.
+
+const ACCESS = { VIEWER: "viewer", ADMIN: "admin" };
+
+// ── Constants ────────────────────────────────────────────────────
+const CATEGORIES = ["Opening Worship","Praise & Worship","Offering","Communion","Altar Call","Closing Worship","Special Number","Other"];
+const KEYS       = ["C","C#/Db","D","D#/Eb","E","F","F#/Gb","G","G#/Ab","A","A#/Bb","B"];
+const ROLES = [
+  { key:"songLeader", label:"Song Leader",  icon:"🎤" },
+  { key:"backup",     label:"Back Up",      icon:"🎵" },
+  { key:"drummer",    label:"Drummer",      icon:"🥁" },
+  { key:"guitar",     label:"Guitar",       icon:"🎸" },
+  { key:"bass",       label:"Bass",         icon:"🎸" },
+  { key:"organ",      label:"Organ / Keys", icon:"🎹" },
+];
+
+const NAVY="#1B3A6B", GOLD="#C9A84C", WHITE="#FFFFFF", MUTED="#6B7A99",
+      BORDER="#D0DAF5", RED="#CC0000", LIGHT="#EEF3FF", GREEN="#1A7F55";
+const CAT_COLORS = {
+  "Opening Worship":"#1B3A6B","Praise & Worship":"#2563EB","Offering":"#C9A84C",
+  "Communion":"#6B3FA0","Altar Call":"#C0392B","Closing Worship":"#1B3A6B",
+  "Special Number":"#1A7F55","Other":"#6B7A99",
+};
+const B  = { border:"none", borderRadius:8, padding:"9px 20px", fontWeight:700, fontSize:14, cursor:"pointer" };
+const G  = { background:"transparent", color:NAVY, border:`1.5px solid ${BORDER}`, borderRadius:8, padding:"7px 14px", fontWeight:500, fontSize:13, cursor:"pointer" };
+const IN = { width:"100%", border:`1.5px solid ${BORDER}`, borderRadius:8, padding:"9px 12px", fontSize:14, background:WHITE, color:"#1a2744", outline:"none", fontFamily:"inherit", boxSizing:"border-box" };
+const LB = { fontSize:11, fontWeight:700, color:MUTED, display:"block", marginBottom:5, textTransform:"uppercase", letterSpacing:"0.6px" };
+
+// ── Helpers ──────────────────────────────────────────────────────
+function getYouTubeId(url) {
+  if (!url) return null;
+  for (const p of [/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/, /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/]) {
+    const m = url.match(p); if (m) return m[1];
+  }
+  return null;
+}
+function getSunday(date) {
+  const d = new Date(date);
+  d.setDate(d.getDate() - d.getDay());
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function addWeeks(dateStr, n) {
+  const [y,m,d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m-1, d);
+  date.setDate(date.getDate() + n * 7);
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+}
+function weekLabel(w) {
+  const [y,m,d] = w.split("-").map(Number);
+  return new Date(y, m-1, d).toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+}
+function weekShort(w) {
+  const [y,m,d] = w.split("-").map(Number);
+  return new Date(y, m-1, d).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+}
+function weekKey(w)  { return "w" + w.replace(/-/g,""); }
+function keyToDate(k) {
+  const s = k.replace(/^w/,"");
+  return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+}
+function getSundaysInMonth(year, month) {
+  const sundays = [], d = new Date(year, month, 1);
+  d.setDate(d.getDate() + ((7 - d.getDay()) % 7));
+  while (d.getMonth() === month) {
+    sundays.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
+    d.setDate(d.getDate()+7);
+  }
+  return sundays;
+}
+function monthLabel(year, month) {
+  return new Date(year, month, 1).toLocaleDateString("en-US",{month:"long",year:"numeric"});
+}
+function YTIcon({size=14}) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{display:"block",flexShrink:0}}><rect x="2" y="5" width="20" height="14" rx="3" fill={RED}/><polygon points="10,8.5 16,12 10,15.5" fill="white"/></svg>;
+}
+
+// ── Admin Login Modal ────────────────────────────────────────────
+function AdminLoginModal({ onSuccess, onClose }) {
+  const [pw, setPw]     = useState("");
+  const [err, setErr]   = useState(false);
+  const [show, setShow] = useState(false);
+
+  function attempt() {
+    if (pw === ADMIN_PASSWORD) { onSuccess(); }
+    else { setErr(true); setPw(""); setTimeout(()=>setErr(false), 2000); }
+  }
+
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(10,20,50,0.65)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:WHITE,borderRadius:18,width:"100%",maxWidth:360,boxShadow:"0 8px 40px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+        <div style={{background:`linear-gradient(135deg,${NAVY},#2a4f8f)`,padding:"22px 24px",textAlign:"center"}}>
+          <div style={{fontSize:32,marginBottom:8}}>🔐</div>
+          <div style={{color:WHITE,fontWeight:800,fontSize:17}}>Admin Login</div>
+          <div style={{color:"rgba(255,255,255,0.55)",fontSize:12,marginTop:4}}>UCC Cadiz Music Team Hub</div>
+        </div>
+        <div style={{padding:"24px"}}>
+          <label style={LB}>Admin Password</label>
+          <div style={{position:"relative",marginBottom:16}}>
+            <input
+              type={show?"text":"password"}
+              style={{...IN, borderColor: err?"#F87171":BORDER, paddingRight:44}}
+              placeholder="Enter admin password…"
+              value={pw}
+              onChange={e=>setPw(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&attempt()}
+              autoFocus
+            />
+            <button onClick={()=>setShow(s=>!s)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:MUTED,padding:4}}>
+              {show?"🙈":"👁️"}
+            </button>
+          </div>
+          {err && <div style={{color:"#C0392B",fontSize:12,fontWeight:600,marginBottom:12,textAlign:"center"}}>Incorrect password. Try again.</div>}
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={onClose} style={{...G,flex:1,textAlign:"center"}}>Cancel</button>
+            <button onClick={attempt} style={{...B,flex:1,background:NAVY,color:WHITE,textAlign:"center"}}>Login</button>
+          </div>
+          <div style={{marginTop:14,padding:"10px 12px",background:LIGHT,borderRadius:8,fontSize:11,color:MUTED,textAlign:"center",lineHeight:1.5}}>
+            👀 Viewing without login? You can see everything — just can't edit.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Copy All Songs ───────────────────────────────────────────────
+function formatSongsForCopy(songList, weekLabelStr) {
+  if (!songList.length) return "";
+  const parts = songList.map((song, i) => {
+    let block = `${i + 1}. ${song.title || "Untitled"}`;
+    if (song.artist) block += ` — ${song.artist}`;
+    if (song.key)    block += ` (Key: ${song.key})`;
+    block += "\n";
+    block += song.lyrics?.trim() ? "\n" + song.lyrics.trim() + "\n" : "\n[No lyrics added yet]\n";
+    return block;
+  });
+  return `Worship Set — ${weekLabelStr}\n${"=".repeat(40)}\n\n` + parts.join("\n" + "-".repeat(40) + "\n\n");
+}
+
+function CopyAllSongsButton({ week, songs }) {
+  const [copied, setCopied] = useState(false);
+  const list = songs[week] || [];
+
+  function handleCopy() {
+    const text = formatSongsForCopy(list, weekLabel(week));
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true); setTimeout(()=>setCopied(false), 2500);
+    }).catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      setCopied(true); setTimeout(()=>setCopied(false), 2500);
+    });
+  }
+
+  return (
+    <button onClick={handleCopy} disabled={list.length===0}
+      style={{...B, background:list.length===0?"#A0B0CC":(copied?"#1A7F55":NAVY), color:WHITE,
+        fontSize:12, padding:"7px 14px", cursor:list.length===0?"not-allowed":"pointer",
+        display:"flex", alignItems:"center", gap:6}}
+      title={list.length===0?"No songs added for this Sunday yet":"Copy all songs + lyrics for this Sunday"}>
+      {copied ? "✓ Copied!" : "📋 Copy All for Deck"}
+    </button>
+  );
+}
+
+// ── Library Picker Modal ─────────────────────────────────────────
+function LibraryPicker({ library, onPick, onClose }) {
+  const [q, setQ]     = useState("");
+  const [cat, setCat] = useState("All");
+  const filtered = useMemo(() => {
+    const lq = q.toLowerCase();
+    return library
+      .filter(s => (cat==="All"||s.category===cat) && (!lq||s.title.toLowerCase().includes(lq)||(s.artist||"").toLowerCase().includes(lq)))
+      .sort((a,b)=>a.title.localeCompare(b.title));
+  }, [library, q, cat]);
+
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(10,20,50,0.6)",zIndex:1100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:WHITE,borderRadius:16,width:"100%",maxWidth:520,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+        <div style={{background:NAVY,borderRadius:"16px 16px 0 0",padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+          <div>
+            <div style={{color:WHITE,fontWeight:800,fontSize:15}}>📚 Song Library</div>
+            <div style={{color:"rgba(255,255,255,0.5)",fontSize:11,marginTop:1}}>{library.length} song{library.length!==1?"s":""} saved</div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:WHITE,borderRadius:7,width:28,height:28,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+        </div>
+        <div style={{padding:"12px 16px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:8,flexShrink:0}}>
+          <input style={{...IN,flex:1}} placeholder="Search title or artist…" value={q} onChange={e=>setQ(e.target.value)} autoFocus/>
+          <select style={{...IN,width:"auto"}} value={cat} onChange={e=>setCat(e.target.value)}>
+            <option value="All">All</option>
+            {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <div style={{overflowY:"auto",flex:1,padding:"8px 12px"}}>
+          {filtered.length===0 ? (
+            <div style={{textAlign:"center",padding:"40px 0",color:MUTED,fontSize:13}}>
+              {library.length===0 ? "No songs in library yet." : "No songs match your search."}
+            </div>
+          ) : filtered.map(song => {
+            const color = CAT_COLORS[song.category]||MUTED;
+            return (
+              <div key={song.id} onClick={()=>onPick(song)}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"10px",borderRadius:10,cursor:"pointer",marginBottom:4,border:"1px solid transparent"}}
+                onMouseEnter={e=>e.currentTarget.style.background=LIGHT}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{width:36,height:36,borderRadius:8,background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <span style={{fontSize:13,fontWeight:800,color}}>♪</span>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:700,fontSize:13,color:NAVY}}>{song.title}</span>
+                    <span style={{fontSize:9,background:color+"22",color,borderRadius:4,padding:"1px 7px",fontWeight:700}}>{song.category}</span>
+                    {getYouTubeId(song.youtube) && <YTIcon size={11}/>}
+                  </div>
+                  <div style={{display:"flex",gap:8,marginTop:1}}>
+                    {song.artist && <span style={{fontSize:11,color:MUTED}}>{song.artist}</span>}
+                    {song.key    && <span style={{fontSize:11,color:MUTED}}>Key: <b style={{color:NAVY}}>{song.key}</b></span>}
+                  </div>
+                </div>
+                <span style={{fontSize:12,color:MUTED,flexShrink:0}}>Add →</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Song Modal ───────────────────────────────────────────────────
+function SongModal({initial, library, onSave, onClose}) {
+  const blank = {title:"",artist:"",key:"",tempo:"",category:CATEGORIES[0],notes:"",lyrics:"",youtube:""};
+  const [form, setForm]           = useState(initial ? {...blank,...initial} : blank);
+  const [saving, setSaving]       = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [showSugg, setShowSugg]   = useState(false);
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const vid = getYouTubeId(form.youtube);
+
+  const suggestions = useMemo(() => {
+    if (!form.title.trim() || initial) return [];
+    const q = form.title.toLowerCase();
+    return library.filter(s=>s.title.toLowerCase().includes(q)).slice(0,6);
+  }, [form.title, library, initial]);
+
+  function pickFromLibrary(song) { setForm({...blank,...song,id:undefined}); setShowPicker(false); setShowSugg(false); }
+
+  async function submit() {
+    if (!form.title.trim()) return;
+    setSaving(true);
+    await onSave({...form, id:initial?.id||Date.now().toString(), title:form.title.trim()});
+    setSaving(false);
+  }
+
+  return (
+    <>
+    {showPicker && <LibraryPicker library={library} onPick={pickFromLibrary} onClose={()=>setShowPicker(false)}/>}
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(10,20,50,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:WHITE,borderRadius:16,width:"100%",maxWidth:500,maxHeight:"92vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+        <div style={{background:NAVY,borderRadius:"16px 16px 0 0",padding:"17px 22px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:1}}>
+          <span style={{color:WHITE,fontSize:16,fontWeight:700}}>{initial?"Edit Song":"Add Song"}</span>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {!initial && library.length>0 && (
+              <button onClick={()=>setShowPicker(true)} style={{...G,color:GOLD,borderColor:GOLD,fontSize:11,padding:"4px 11px",background:"rgba(255,255,255,0.1)"}}>
+                📚 Browse Library
+              </button>
+            )}
+            <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:WHITE,borderRadius:7,width:28,height:28,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+          </div>
+        </div>
+        <div style={{padding:22,display:"flex",flexDirection:"column",gap:13}}>
+          {/* Title with live suggestions */}
+          <div style={{position:"relative"}}>
+            <label style={LB}>Song Title *</label>
+            <input style={IN} value={form.title} placeholder="Song title…"
+              onChange={e=>{set("title",e.target.value);setShowSugg(true);}}
+              onBlur={()=>setTimeout(()=>setShowSugg(false),150)}
+              autoFocus/>
+            {showSugg && suggestions.length>0 && (
+              <div style={{position:"absolute",top:"100%",left:0,right:0,background:WHITE,border:`1px solid ${BORDER}`,borderRadius:8,zIndex:10,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",overflow:"hidden"}}>
+                {suggestions.map(s=>(
+                  <div key={s.id} onMouseDown={()=>pickFromLibrary(s)}
+                    style={{padding:"9px 12px",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",gap:8,borderBottom:`1px solid ${BORDER}`}}
+                    onMouseEnter={e=>e.currentTarget.style.background=LIGHT}
+                    onMouseLeave={e=>e.currentTarget.style.background=WHITE}>
+                    <span style={{color:MUTED,fontSize:11}}>📚</span>
+                    <span style={{fontWeight:600,color:NAVY}}>{s.title}</span>
+                    {s.artist && <span style={{color:MUTED,fontSize:11}}>— {s.artist}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <label style={LB}>Artist / Composer</label>
+            <input style={IN} value={form.artist} placeholder="Artist name…" onChange={e=>set("artist",e.target.value)}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+            <div>
+              <label style={LB}>Key</label>
+              <select style={IN} value={form.key} onChange={e=>set("key",e.target.value)}>
+                <option value="">—</option>
+                {KEYS.map(k=><option key={k}>{k}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={LB}>Tempo (BPM)</label>
+              <input style={IN} type="number" value={form.tempo} placeholder="120" onChange={e=>set("tempo",e.target.value)}/>
+            </div>
+            <div>
+              <label style={LB}>Category</label>
+              <select style={IN} value={form.category} onChange={e=>set("category",e.target.value)}>
+                {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={LB}>YouTube Link</label>
+            <input style={IN} value={form.youtube} placeholder="https://youtu.be/…" onChange={e=>set("youtube",e.target.value)}/>
+            {vid && (
+              <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,background:LIGHT,borderRadius:8,padding:"8px 10px"}}>
+                <img src={`https://img.youtube.com/vi/${vid}/default.jpg`} alt="" style={{width:60,height:34,borderRadius:4,objectFit:"cover"}}/>
+                <a href={form.youtube} target="_blank" rel="noreferrer" style={{fontSize:12,color:RED,textDecoration:"none",display:"flex",alignItems:"center",gap:4}}><YTIcon size={12}/> Preview</a>
+              </div>
+            )}
+          </div>
+          <div>
+            <label style={LB}>Team Notes</label>
+            <textarea style={{...IN,resize:"vertical",minHeight:60}} value={form.notes} placeholder="Arrangement notes, cues…" onChange={e=>set("notes",e.target.value)}/>
+          </div>
+          <div>
+            <label style={LB}>Lyrics / Chord Chart</label>
+            <textarea style={{...IN,resize:"vertical",minHeight:120,fontFamily:"'Courier New',monospace",fontSize:13}} value={form.lyrics} placeholder="Paste lyrics here with [Verse 1] / [Chorus] / [Bridge] tags…" onChange={e=>set("lyrics",e.target.value)}/>
+          </div>
+          <div style={{display:"flex",gap:10,paddingTop:4}}>
+            <button onClick={onClose} style={{...G,flex:1}}>Cancel</button>
+            <button onClick={submit} disabled={saving||!form.title.trim()} style={{...B,flex:2,background:NAVY,color:WHITE,opacity:saving?0.6:1}}>
+              {saving?"Saving…":(initial?"Save Changes":"Add Song")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </>
+  );
+}
+
+// ── Song Card ────────────────────────────────────────────────────
+function SongCard({ song, index, inLibrary, isAdmin, onSaveToLibrary, onEdit, onDelete }) {
+  const [open, setOpen]   = useState(false);
+  const [saved, setSaved] = useState(false);
+  const color = CAT_COLORS[song.category]||MUTED;
+  const vid   = getYouTubeId(song.youtube);
+
+  async function handleSaveToLib() { await onSaveToLibrary(song); setSaved(true); setTimeout(()=>setSaved(false),2500); }
+
+  return (
+    <div style={{background:WHITE,borderRadius:12,border:`1px solid ${BORDER}`,overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px"}}>
+        <div style={{width:28,height:28,borderRadius:7,background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <span style={{fontSize:12,fontWeight:800,color}}>{index+1}</span>
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+            <span style={{fontWeight:700,fontSize:13,color:NAVY}}>{song.title}</span>
+            <span style={{fontSize:9,background:color+"22",color,borderRadius:4,padding:"1px 7px",fontWeight:700}}>{song.category}</span>
+            {vid && <YTIcon size={11}/>}
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:2}}>
+            {song.artist && <span style={{fontSize:11,color:MUTED}}>{song.artist}</span>}
+            {song.key    && <span style={{fontSize:11,color:MUTED}}>Key: <b style={{color:NAVY}}>{song.key}</b></span>}
+            {song.tempo  && <span style={{fontSize:11,color:MUTED}}>{song.tempo} BPM</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {isAdmin && !inLibrary && (
+            <button onClick={handleSaveToLib} style={{...G,fontSize:11,padding:"5px 9px",color:saved?"#1A7F55":NAVY,borderColor:saved?"#A7F3D0":BORDER}}>
+              {saved?"✓ Saved":"📚 Save"}
+            </button>
+          )}
+          {vid && <a href={song.youtube} target="_blank" rel="noreferrer" style={{...G,display:"inline-flex",alignItems:"center",gap:5,textDecoration:"none",color:RED,borderColor:"#FFCCCC",fontSize:11,padding:"5px 9px"}}><YTIcon size={12}/> Watch</a>}
+          <button onClick={()=>setOpen(x=>!x)} style={{...G,padding:"5px 11px",fontSize:12}}>{open?"▲":"▼"}</button>
+        </div>
+      </div>
+      {open && (
+        <div style={{borderTop:`1px solid ${BORDER}`,padding:"13px 15px",background:"#F8FAFF"}}>
+          {vid && (
+            <div style={{marginBottom:12,background:WHITE,border:`1px solid ${BORDER}`,borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:MUTED,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:7}}>YouTube Reference</div>
+              <div style={{display:"flex",alignItems:"flex-start",gap:11}}>
+                <a href={song.youtube} target="_blank" rel="noreferrer">
+                  <img src={`https://img.youtube.com/vi/${vid}/mqdefault.jpg`} alt="thumbnail" style={{width:110,height:62,borderRadius:6,objectFit:"cover",display:"block"}}/>
+                </a>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:NAVY,marginBottom:5}}>{song.title}</div>
+                  <a href={song.youtube} target="_blank" rel="noreferrer" style={{fontSize:12,color:RED,textDecoration:"none",display:"flex",alignItems:"center",gap:4}}><YTIcon size={12}/> Open on YouTube</a>
+                </div>
+              </div>
+            </div>
+          )}
+          {song.notes  && <div style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:700,color:MUTED,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>Team Notes</div><p style={{fontSize:13,color:"#334",lineHeight:1.7,margin:0}}>{song.notes}</p></div>}
+          {song.lyrics && <div style={{marginBottom:12}}><div style={{fontSize:10,fontWeight:700,color:MUTED,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:5}}>Lyrics / Chord Chart</div><pre style={{fontSize:12,color:"#223",lineHeight:1.8,background:WHITE,border:`1px solid ${BORDER}`,borderRadius:8,padding:"11px 13px",fontFamily:"'Courier New',monospace",margin:0}}>{song.lyrics}</pre></div>}
+          {isAdmin && (
+            <div style={{display:"flex",gap:7}}>
+              <button style={{...G,fontSize:12,padding:"5px 13px"}} onClick={onEdit}>Edit</button>
+              <button style={{...G,fontSize:12,padding:"5px 13px",color:"#C0392B",borderColor:"#F5C6C6"}} onClick={onDelete}>Remove from Sunday</button>
+            </div>
+          )}
+          {!isAdmin && <div style={{fontSize:11,color:MUTED,fontStyle:"italic"}}>👀 View only — log in as admin to edit.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Song Library Tab ─────────────────────────────────────────────
+function LibraryTab({ library, isAdmin, onSaveToLibrary, onDeleteFromLibrary }) {
+  const [q, setQ]               = useState("");
+  const [cat, setCat]           = useState("All");
+  const [editing, setEditing]   = useState(null);
+  const [showModal, setShowModal] = useState(false);
+
+  const filtered = useMemo(() => {
+    const lq = q.toLowerCase();
+    return library
+      .filter(s => (cat==="All"||s.category===cat) && (!lq||s.title.toLowerCase().includes(lq)||(s.artist||"").toLowerCase().includes(lq)))
+      .sort((a,b)=>a.title.localeCompare(b.title));
+  }, [library, q, cat]);
+
+  const byCategory = useMemo(() => {
+    const map = {}; library.forEach(s=>{ map[s.category]=(map[s.category]||0)+1; }); return map;
+  }, [library]);
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:9,marginBottom:18,flexWrap:"wrap"}}>
+        <div style={{background:WHITE,borderRadius:10,border:`1px solid ${BORDER}`,padding:"9px 16px",minWidth:105}}>
+          <div style={{fontSize:22,fontWeight:800,color:NAVY}}>{library.length}</div>
+          <div style={{fontSize:10,color:MUTED,fontWeight:700,marginTop:1}}>Total Songs</div>
+        </div>
+        {Object.entries(byCategory).slice(0,4).map(([c,cnt])=>(
+          <div key={c} style={{background:WHITE,borderRadius:10,border:`1px solid ${BORDER}`,padding:"9px 16px",minWidth:105}}>
+            <div style={{fontSize:22,fontWeight:800,color:CAT_COLORS[c]||NAVY}}>{cnt}</div>
+            <div style={{fontSize:10,color:MUTED,fontWeight:700,marginTop:1}}>{c}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:9,marginBottom:16,flexWrap:"wrap"}}>
+        <input style={{...IN,flex:"1 1 150px",width:"auto",maxWidth:260}} placeholder="Search song or artist…" value={q} onChange={e=>setQ(e.target.value)}/>
+        <select style={{...IN,width:"auto"}} value={cat} onChange={e=>setCat(e.target.value)}>
+          <option value="All">All Categories</option>
+          {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+        </select>
+        {isAdmin && <button style={{...B,background:GOLD,color:WHITE,marginLeft:"auto"}} onClick={()=>{setEditing(null);setShowModal(true);}}>+ Add to Library</button>}
+      </div>
+      {filtered.length===0 ? (
+        <div style={{textAlign:"center",padding:"60px 0",color:MUTED}}>
+          <div style={{fontSize:44,opacity:0.2,marginBottom:12}}>📚</div>
+          <div style={{fontWeight:700,fontSize:16,marginBottom:5,color:NAVY}}>{library.length===0?"Library is empty":"No songs match"}</div>
+          <div style={{fontSize:13,marginBottom:22}}>{library.length===0?"Songs are automatically saved here when added to a Sunday.":"Try a different search or filter."}</div>
+          {library.length===0 && isAdmin && <button style={{...B,background:NAVY,color:WHITE}} onClick={()=>{setEditing(null);setShowModal(true);}}>Add First Song</button>}
+        </div>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filtered.map(song => {
+            const color = CAT_COLORS[song.category]||MUTED;
+            const vid   = getYouTubeId(song.youtube);
+            return (
+              <div key={song.id} style={{background:WHITE,borderRadius:12,border:`1px solid ${BORDER}`,padding:"12px 15px",display:"flex",alignItems:"center",gap:12}}>
+                <div style={{width:34,height:34,borderRadius:8,background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <span style={{fontSize:14,color,fontWeight:800}}>♪</span>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
+                    <span style={{fontWeight:700,fontSize:14,color:NAVY}}>{song.title}</span>
+                    <span style={{fontSize:10,background:color+"22",color,borderRadius:5,padding:"2px 8px",fontWeight:700}}>{song.category}</span>
+                    {vid && <span style={{fontSize:10,background:"#FFF0F0",color:RED,borderRadius:5,padding:"2px 7px",fontWeight:700,display:"inline-flex",alignItems:"center",gap:3}}><YTIcon size={11}/> YT</span>}
+                  </div>
+                  <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                    {song.artist && <span style={{fontSize:11,color:MUTED}}>{song.artist}</span>}
+                    {song.key    && <span style={{fontSize:11,color:MUTED}}>Key: <b style={{color:NAVY}}>{song.key}</b></span>}
+                    {song.tempo  && <span style={{fontSize:11,color:MUTED}}>{song.tempo} BPM</span>}
+                  </div>
+                </div>
+                {isAdmin && (
+                  <div style={{display:"flex",gap:6,flexShrink:0}}>
+                    {vid && <a href={song.youtube} target="_blank" rel="noreferrer" style={{...G,display:"inline-flex",alignItems:"center",gap:4,textDecoration:"none",color:RED,borderColor:"#FFCCCC",fontSize:11,padding:"5px 9px"}}><YTIcon size={12}/> Watch</a>}
+                    <button style={{...G,fontSize:12,padding:"5px 11px"}} onClick={()=>{setEditing(song);setShowModal(true);}}>Edit</button>
+                    <button style={{...G,fontSize:12,padding:"5px 11px",color:"#C0392B",borderColor:"#F5C6C6"}} onClick={()=>onDeleteFromLibrary(song.id)}>Delete</button>
+                  </div>
+                )}
+                {!isAdmin && vid && (
+                  <a href={song.youtube} target="_blank" rel="noreferrer" style={{...G,display:"inline-flex",alignItems:"center",gap:4,textDecoration:"none",color:RED,borderColor:"#FFCCCC",fontSize:11,padding:"5px 9px",flexShrink:0}}><YTIcon size={12}/> Watch</a>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {showModal && isAdmin && (
+        <SongModal
+          initial={editing}
+          library={[]}
+          onSave={async song=>{ await onSaveToLibrary(song); setShowModal(false); setEditing(null); }}
+          onClose={()=>{setShowModal(false);setEditing(null);}}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Monthly Calendar Tab ─────────────────────────────────────────
+function MonthCalendar({songs, sched, onSelectWeek}) {
+  const today = new Date();
+  const [calYear,  setCalYear]  = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth());
+
+  function shiftMonth(n) {
+    let m = calMonth + n, y = calYear;
+    if (m > 11) { m = 0; y++; } if (m < 0) { m = 11; y--; }
+    setCalMonth(m); setCalYear(y);
+  }
+
+  const sundays  = getSundaysInMonth(calYear, calMonth);
+  const todayStr = getSunday(today);
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
+        <button onClick={()=>shiftMonth(-1)} style={{...G,padding:"6px 14px"}}>← Prev</button>
+        <div style={{flex:1,textAlign:"center",fontWeight:800,fontSize:16,color:NAVY}}>{monthLabel(calYear,calMonth)}</div>
+        <button onClick={()=>shiftMonth(1)}  style={{...G,padding:"6px 14px"}}>Next →</button>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {sundays.map(w => {
+          const team     = sched[w]||{}, songList = songs[w]||[];
+          const filled   = ROLES.filter(r=>team[r.key]?.trim());
+          const isToday  = w===todayStr;
+          return (
+            <div key={w} onClick={()=>onSelectWeek(w)}
+              style={{background:WHITE,borderRadius:14,border:`2px solid ${isToday?GOLD:BORDER}`,overflow:"hidden",cursor:"pointer",boxShadow:isToday?"0 2px 12px rgba(201,168,76,0.2)":"none"}}>
+              <div style={{background:isToday?`linear-gradient(90deg,${NAVY},#2a4f8f)`:LIGHT,padding:"10px 15px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontSize:10,fontWeight:800,color:isToday?GOLD:MUTED,textTransform:"uppercase",letterSpacing:"1px"}}>{isToday?"This Sunday":"Sunday"}</div>
+                  <div style={{fontSize:15,fontWeight:800,color:isToday?WHITE:NAVY}}>{weekLabel(w)}</div>
+                </div>
+                <div style={{display:"flex",gap:7,alignItems:"center"}}>
+                  {songList.length>0 && <span style={{fontSize:11,background:isToday?"rgba(255,255,255,0.15)":"#E8F4FD",color:isToday?WHITE:"#2563EB",borderRadius:6,padding:"2px 9px",fontWeight:700}}>🎵 {songList.length} song{songList.length!==1?"s":""}</span>}
+                  <span style={{fontSize:12,color:isToday?"rgba(255,255,255,0.6)":MUTED}}>→</span>
+                </div>
+              </div>
+              <div style={{padding:"10px 14px"}}>
+                {filled.length===0 ? (
+                  <div style={{fontSize:12,color:MUTED,fontStyle:"italic"}}>No team assigned yet</div>
+                ) : (
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {filled.map(r=>(
+                      <div key={r.key} style={{display:"flex",alignItems:"center",gap:5,background:LIGHT,borderRadius:8,padding:"4px 10px",border:`1px solid ${BORDER}`}}>
+                        <span style={{fontSize:13}}>{r.icon}</span>
+                        <div>
+                          <div style={{fontSize:9,fontWeight:700,color:MUTED,textTransform:"uppercase",letterSpacing:"0.3px"}}>{r.label}</div>
+                          <div style={{fontSize:12,fontWeight:700,color:NAVY}}>{team[r.key]}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {songList.length>0 && (
+                  <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${BORDER}`,display:"flex",flexWrap:"wrap",gap:5}}>
+                    {songList.slice(0,4).map((s,i)=>{
+                      const c = CAT_COLORS[s.category]||MUTED;
+                      return <span key={s.id} style={{fontSize:11,background:c+"18",color:c,borderRadius:5,padding:"2px 8px",fontWeight:600}}>{i+1}. {s.title}</span>;
+                    })}
+                    {songList.length>4 && <span style={{fontSize:11,color:MUTED}}>+{songList.length-4} more</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Overview Tab ─────────────────────────────────────────────────
+function Overview({week, songs, sched}) {
+  const list   = songs[week]||[], team = sched[week]||{};
+  const filled = ROLES.filter(r=>team[r.key]?.trim());
+  const [openSong, setOpenSong] = useState(null);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* Team */}
+      <div style={{background:WHITE,borderRadius:14,border:`1px solid ${BORDER}`,overflow:"hidden"}}>
+        <div style={{background:`linear-gradient(90deg,${NAVY} 0%,#2a4f8f 100%)`,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>👥</span>
+          <div><div style={{color:WHITE,fontWeight:700,fontSize:14}}>Team Schedule</div><div style={{color:"rgba(255,255,255,0.55)",fontSize:11}}>{weekLabel(week)}</div></div>
+        </div>
+        <div style={{padding:"14px 16px"}}>
+          {filled.length===0 ? (
+            <div style={{textAlign:"center",padding:"20px 0",color:MUTED,fontSize:13}}>No team assigned for this Sunday yet.</div>
+          ) : (
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
+              {filled.map(r=>(
+                <div key={r.key} style={{background:LIGHT,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:9}}>
+                  <span style={{fontSize:20,flexShrink:0}}>{r.icon}</span>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:10,fontWeight:700,color:MUTED,textTransform:"uppercase",letterSpacing:"0.4px"}}>{r.label}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:NAVY,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{team[r.key]}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Song list */}
+      <div style={{background:WHITE,borderRadius:14,border:`1px solid ${BORDER}`,overflow:"hidden"}}>
+        <div style={{background:`linear-gradient(90deg,${GREEN} 0%,#22a06b 100%)`,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,justifyContent:"space-between",flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:18}}>🎵</span>
+            <div><div style={{color:WHITE,fontWeight:700,fontSize:14}}>Song List</div><div style={{color:"rgba(255,255,255,0.55)",fontSize:11}}>{list.length} song{list.length!==1?"s":""} this Sunday</div></div>
+          </div>
+          <CopyAllSongsButton week={week} songs={songs}/>
+        </div>
+        <div style={{padding:"10px 12px"}}>
+          {list.length===0 ? (
+            <div style={{textAlign:"center",padding:"20px 0",color:MUTED,fontSize:13}}>No songs added for this Sunday yet.</div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {list.map((song,i)=>{
+                const color = CAT_COLORS[song.category]||MUTED;
+                const vid   = getYouTubeId(song.youtube);
+                const isOpen = openSong===song.id;
+                return (
+                  <div key={song.id} style={{borderRadius:10,border:`1px solid ${BORDER}`,overflow:"hidden"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",cursor:"pointer"}} onClick={()=>setOpenSong(isOpen?null:song.id)}>
+                      <div style={{width:28,height:28,borderRadius:7,background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        <span style={{fontSize:12,fontWeight:800,color}}>{i+1}</span>
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:700,fontSize:13,color:NAVY}}>{song.title}</span>
+                          <span style={{fontSize:9,background:color+"22",color,borderRadius:4,padding:"1px 7px",fontWeight:700}}>{song.category}</span>
+                          {vid && <YTIcon size={11}/>}
+                        </div>
+                        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:2}}>
+                          {song.artist && <span style={{fontSize:11,color:MUTED}}>{song.artist}</span>}
+                          {song.key    && <span style={{fontSize:11,color:MUTED}}>Key: <b style={{color:NAVY}}>{song.key}</b></span>}
+                        </div>
+                      </div>
+                      <span style={{color:MUTED,fontSize:13,flexShrink:0}}>{isOpen?"▲":"▼"}</span>
+                    </div>
+                    {isOpen && (
+                      <div style={{borderTop:`1px solid ${BORDER}`,padding:"10px 13px",background:"#F8FAFF"}}>
+                        {song.notes  && <p style={{fontSize:12,color:"#334",lineHeight:1.7,marginBottom:8}}><b style={{color:MUTED,fontSize:10,textTransform:"uppercase",letterSpacing:"0.4px"}}>Notes: </b>{song.notes}</p>}
+                        {song.lyrics && <pre style={{fontSize:11,color:"#223",lineHeight:1.8,background:WHITE,border:`1px solid ${BORDER}`,borderRadius:7,padding:"9px 11px",fontFamily:"'Courier New',monospace",margin:0}}>{song.lyrics}</pre>}
+                        {!song.notes && !song.lyrics && <div style={{fontSize:12,color:MUTED,fontStyle:"italic"}}>No notes or lyrics added yet.</div>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Team Schedule Tab ────────────────────────────────────────────
+function TeamSchedule({week, sched, isAdmin, onSave}) {
+  const [form, setForm]     = useState(sched[week]||{});
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved]   = useState(true);
+  useEffect(()=>{ setForm(sched[week]||{}); setSaved(true); }, [week, sched]);
+  const set = (k,v) => { setForm(f=>({...f,[k]:v})); setSaved(false); };
+  const filled = ROLES.filter(r=>form[r.key]?.trim());
+  async function save() { setSaving(true); await onSave(week,form); setSaving(false); setSaved(true); }
+
+  return (
+    <div>
+      {filled.length>0 && (
+        <div style={{background:WHITE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"14px 16px",marginBottom:20}}>
+          <div style={{fontSize:10,fontWeight:700,color:MUTED,textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:10}}>This Week's Team</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {filled.map(r=>(
+              <div key={r.key} style={{background:LIGHT,border:`1px solid ${BORDER}`,borderRadius:20,padding:"6px 14px",display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:18}}>{r.icon}</span>
+                <div>
+                  <div style={{fontSize:9,fontWeight:700,color:MUTED,textTransform:"uppercase",letterSpacing:"0.4px"}}>{r.label}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:NAVY}}>{form[r.key]}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12,marginBottom:18}}>
+        {ROLES.map(r=>(
+          <div key={r.key} style={{background:WHITE,borderRadius:12,border:`1px solid ${BORDER}`,padding:"14px 15px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:9}}>
+              <div style={{width:34,height:34,borderRadius:8,background:NAVY+"15",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{r.icon}</div>
+              <label style={{...LB,margin:0,fontSize:12}}>{r.label}</label>
+            </div>
+            <input style={{...IN,fontSize:13,background:isAdmin?WHITE:"#F4F6FB",cursor:isAdmin?"text":"default"}}
+              value={form[r.key]||""} onChange={e=>isAdmin&&set(r.key,e.target.value)}
+              readOnly={!isAdmin} placeholder={isAdmin?"Enter name…":"—"}/>
+          </div>
+        ))}
+      </div>
+      {isAdmin ? (
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button style={{...B,background:NAVY,color:WHITE,opacity:saving?0.6:1}} onClick={save} disabled={saving}>{saving?"Saving…":"Save Schedule"}</button>
+          {saved && filled.length>0 && <span style={{fontSize:13,color:"#1A7F55",fontWeight:600}}>✓ Saved</span>}
+          {!saved && <span style={{fontSize:13,color:GOLD,fontWeight:600}}>● Unsaved changes</span>}
+        </div>
+      ) : (
+        <div style={{padding:"12px 16px",background:LIGHT,border:`1px solid ${BORDER}`,borderRadius:10,fontSize:13,color:MUTED,textAlign:"center"}}>
+          👀 Viewing as guest — log in as admin to edit the team schedule.
+        </div>
+      )}
+      {filled.length===0 && (
+        <div style={{textAlign:"center",padding:"50px 0",color:MUTED}}>
+          <div style={{fontSize:40,opacity:0.2,marginBottom:10}}>👥</div>
+          <div style={{fontWeight:700,fontSize:15,color:NAVY,marginBottom:4}}>No team assigned yet</div>
+          <div style={{fontSize:13}}>{isAdmin?"Fill in the names above and tap Save Schedule.":"Check back later — no team assigned yet."}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── App ──────────────────────────────────────────────────────────
+function App() {
+  const [songs,    setSongs]   = useState({});
+  const [sched,    setSched]   = useState({});
+  const [library,  setLibrary] = useState([]);
+  const [week,     setWeek]    = useState(getSunday(new Date()));
+  const [tab,      setTab]     = useState("calendar");
+  const [modal,    setModal]   = useState(false);
+  const [editing,  setEditing] = useState(null);
+  const [search,   setSearch]  = useState("");
+  const [catFilter,setCat]     = useState("All");
+  const [toast,    setToast]   = useState(null);
+  const [status,   setStatus]  = useState("connecting");
+  const [access,   setAccess]  = useState(ACCESS.VIEWER);   // everyone starts as viewer
+  const [showLogin, setShowLogin] = useState(false);
+
+  const isAdmin = access === ACCESS.ADMIN;
+  const notify = (msg, type="success") => { setToast({msg,type}); setTimeout(()=>setToast(null),3500); };
+
+  useEffect(()=>{
+    if (!db) { setStatus("error"); return; }
+    const songsRef = db.ref(`${DB_ROOT}/songs`);
+    const schedRef = db.ref(`${DB_ROOT}/schedule`);
+    const libRef   = db.ref(`${DB_ROOT}/library`);
+
+    songsRef.on("value", snap=>{
+      const val = snap.val()||{}, out = {};
+      Object.keys(val).forEach(k=>{ out[keyToDate(k)] = Object.values(val[k]||{}); });
+      setSongs(out); setStatus("online");
+    }, ()=>setStatus("error"));
+
+    schedRef.on("value", snap=>{
+      const val = snap.val()||{}, out = {};
+      Object.keys(val).forEach(k=>{ out[keyToDate(k)] = val[k]; });
+      setSched(out);
+    });
+
+    libRef.on("value", snap=>{
+      const val = snap.val()||{};
+      setLibrary(Object.values(val));
+    });
+
+    return ()=>{ songsRef.off(); schedRef.off(); libRef.off(); };
+  },[]);
+
+  async function saveToLibrary(song) {
+    if (!db || !isAdmin) return;
+    await db.ref(`${DB_ROOT}/library/${song.id}`).set(song);
+  }
+  async function deleteFromLibrary(id) {
+    if (!db || !isAdmin) return;
+    await db.ref(`${DB_ROOT}/library/${id}`).remove();
+    notify("Song deleted from library","info");
+  }
+  async function saveSongs(w, list) {
+    if (!db || !isAdmin) return;
+    const obj = {}; list.forEach(s=>{ obj[s.id]=s; });
+    await db.ref(`${DB_ROOT}/songs/${weekKey(w)}`).set(list.length?obj:null);
+  }
+  async function saveSched(w, data) {
+    if (!db || !isAdmin) return;
+    await db.ref(`${DB_ROOT}/schedule/${weekKey(w)}`).set(data);
+    notify("Team schedule saved!");
+  }
+  async function handleSongSave(song) {
+    const list = [...(songs[week]||[])];
+    if (editing) {
+      const i = list.findIndex(s=>s.id===editing.id);
+      if (i>-1) list[i]=song; else list.push(song);
+    } else { list.push(song); }
+    await saveSongs(week, list);
+    await saveToLibrary(song);
+    setModal(false); setEditing(null);
+    notify(editing?"Song updated!":"Song added! 🎵");
+  }
+
+  const thisWeek   = getSunday(new Date());
+  const isThisWeek = week === thisWeek;
+  const allWeeks   = [...new Set([...Object.keys(songs),...Object.keys(sched)])].sort().reverse();
+
+  const weekSongs = (songs[week]||[]).filter(s=>{
+    const q = search.toLowerCase();
+    return (!q||s.title.toLowerCase().includes(q)||(s.artist||"").toLowerCase().includes(q))
+      && (catFilter==="All"||s.category===catFilter);
+  });
+
+  const TABS = [
+    {id:"calendar", label:"📅 Monthly View"},
+    {id:"overview", label:"📋 Sunday Schedule"},
+    {id:"songs",    label:"🎵 Manage Songs"},
+    {id:"schedule", label:"👥 Assign Team"},
+    {id:"library",  label:"📚 Song Library"},
+  ];
+
+  const statusDot  = {online:"#4ADE80",error:"#F87171",connecting:"#FCD34D"}[status];
+  const statusText = {online:"Live",error:"Offline",connecting:"Connecting…"}[status];
+
+  return (
+    <div style={{fontFamily:"'Segoe UI',system-ui,sans-serif",background:LIGHT,minHeight:"100vh",color:"#1a2744"}}>
+
+      {/* Login modal */}
+      {showLogin && (
+        <AdminLoginModal
+          onSuccess={()=>{ setAccess(ACCESS.ADMIN); setShowLogin(false); notify("Logged in as admin 🔐"); }}
+          onClose={()=>setShowLogin(false)}
+        />
+      )}
+
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#1B3A6B 0%,#2a4f8f 100%)"}}>
+        <div style={{maxWidth:900,margin:"0 auto",padding:"18px 18px 0"}}>
+
+          <div style={{display:"flex",alignItems:"center",gap:13,marginBottom:14}}>
+            <div style={{width:42,height:42,borderRadius:10,background:GOLD,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <svg width="23" height="23" viewBox="0 0 24 24" fill="none">
+                <path d="M9 18V5l12-2v13" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="6" cy="18" r="3" stroke="white" strokeWidth="2"/>
+                <circle cx="18" cy="16" r="3" stroke="white" strokeWidth="2"/>
+              </svg>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{color:WHITE,fontSize:18,fontWeight:800,lineHeight:1.2}}>UCC Cadiz Music Team Hub</div>
+              <div style={{color:GOLD,fontSize:11,fontWeight:600}}>Universal Church of Christ Incorporated · Cadiz City</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:5}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:statusDot}}/>
+                <span style={{fontSize:11,color:"rgba(255,255,255,0.6)",fontWeight:500}}>{statusText}</span>
+              </div>
+              {isAdmin ? (
+                <button
+                  onClick={()=>{ setAccess(ACCESS.VIEWER); notify("Logged out","info"); }}
+                  style={{...G,fontSize:11,padding:"5px 12px",color:"rgba(255,255,255,0.8)",borderColor:"rgba(255,255,255,0.3)",background:"rgba(255,255,255,0.1)"}}>
+                  🔓 Admin · Log out
+                </button>
+              ) : (
+                <button
+                  onClick={()=>setShowLogin(true)}
+                  style={{...G,fontSize:11,padding:"5px 12px",color:"rgba(255,255,255,0.7)",borderColor:"rgba(255,255,255,0.25)",background:"rgba(255,255,255,0.08)"}}>
+                  🔐 Admin Login
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Access badge */}
+          <div style={{display:"inline-flex",alignItems:"center",gap:5,background:isAdmin?"rgba(201,168,76,0.2)":"rgba(255,255,255,0.08)",borderRadius:6,padding:"3px 10px",marginBottom:10,border:`1px solid ${isAdmin?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.15)"}`}}>
+            <span style={{fontSize:11}}>{isAdmin?"✏️":"👀"}</span>
+            <span style={{fontSize:11,color:isAdmin?GOLD:"rgba(255,255,255,0.6)",fontWeight:600}}>{isAdmin?"Admin — full edit access":"View only"}</span>
+          </div>
+
+          {/* Week nav */}
+          {tab!=="library" && (
+            <>
+              <div style={{display:"flex",alignItems:"center",gap:10,padding:"13px 0 0",borderTop:"1px solid rgba(255,255,255,0.12)"}}>
+                <button onClick={()=>setWeek(addWeeks(week,-1))} style={{...G,color:"rgba(255,255,255,0.75)",borderColor:"rgba(255,255,255,0.25)",padding:"5px 13px",fontSize:12}}>← Prev</button>
+                <div style={{flex:1,textAlign:"center"}}>
+                  <div style={{color:GOLD,fontSize:10,fontWeight:800,letterSpacing:"1.2px",textTransform:"uppercase"}}>{isThisWeek?"This Sunday":"Sunday Service"}</div>
+                  <div style={{color:WHITE,fontSize:14,fontWeight:600}}>{weekLabel(week)}</div>
+                </div>
+                <button onClick={()=>setWeek(addWeeks(week,1))} style={{...G,color:"rgba(255,255,255,0.75)",borderColor:"rgba(255,255,255,0.25)",padding:"5px 13px",fontSize:12}}>Next →</button>
+              </div>
+              {allWeeks.length>1 && (
+                <div style={{display:"flex",gap:5,overflowX:"auto",padding:"9px 0 0",scrollbarWidth:"none"}}>
+                  {allWeeks.slice(0,10).map(w=>(
+                    <button key={w} onClick={()=>setWeek(w)}
+                      style={{background:w===week?GOLD:"rgba(255,255,255,0.12)",color:WHITE,border:"none",borderRadius:6,padding:"3px 12px",fontSize:11,cursor:"pointer",whiteSpace:"nowrap",fontWeight:w===week?700:400}}>
+                      {weekShort(w)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Tabs */}
+          <div style={{display:"flex",gap:0,marginTop:14,overflowX:"auto",scrollbarWidth:"none"}}>
+            {TABS.map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{
+                background:tab===t.id?"rgba(255,255,255,0.15)":"transparent",
+                color:tab===t.id?WHITE:"rgba(255,255,255,0.5)",
+                border:"none",borderRadius:"8px 8px 0 0",
+                padding:"9px 14px",fontWeight:tab===t.id?700:500,
+                fontSize:12,cursor:"pointer",whiteSpace:"nowrap",
+                borderBottom:tab===t.id?`2.5px solid ${GOLD}`:"2.5px solid transparent",
+              }}>{t.label}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div style={{maxWidth:900,margin:"0 auto",padding:"20px 18px"}}>
+        {status==="connecting" && <div style={{background:"#FEF9C3",border:"1px solid #FDE047",borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#854D0E",fontWeight:500}}>⏳ Connecting to database…</div>}
+        {status==="error"      && <div style={{background:"#FEE2E2",border:"1px solid #FCA5A5",borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#991B1B",fontWeight:500}}>⚠️ Cannot connect to Firebase. Check your internet connection.</div>}
+
+        {tab==="calendar" && <MonthCalendar songs={songs} sched={sched} onSelectWeek={w=>{setWeek(w);setTab("overview");}}/>}
+        {tab==="overview" && <Overview week={week} songs={songs} sched={sched}/>}
+
+        {tab==="songs" && <>
+          <div style={{display:"flex",gap:9,marginBottom:14,flexWrap:"wrap"}}>
+            <input style={{...IN,width:"auto",flex:"1 1 150px",maxWidth:250}} placeholder="Search song or artist…" value={search} onChange={e=>setSearch(e.target.value)}/>
+            <select style={{...IN,width:"auto"}} value={catFilter} onChange={e=>setCat(e.target.value)}>
+              <option value="All">All Categories</option>
+              {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+            </select>
+            {isAdmin && <button style={{...B,background:GOLD,color:WHITE,marginLeft:"auto"}} onClick={()=>{setEditing(null);setModal(true);}}>+ Add Song</button>}
+          </div>
+          <div style={{display:"flex",gap:9,marginBottom:18,flexWrap:"wrap"}}>
+            {[
+              {label:"Songs This Week", val:(songs[week]||[]).length},
+              {label:"With YouTube",    val:(songs[week]||[]).filter(s=>getYouTubeId(s.youtube)).length},
+              {label:"In Library",      val:library.length},
+            ].map(m=>(
+              <div key={m.label} style={{background:WHITE,borderRadius:10,border:`1px solid ${BORDER}`,padding:"9px 16px",minWidth:105}}>
+                <div style={{fontSize:22,fontWeight:800,color:NAVY}}>{m.val}</div>
+                <div style={{fontSize:10,color:MUTED,fontWeight:700,marginTop:1}}>{m.label}</div>
+              </div>
+            ))}
+          </div>
+          {weekSongs.length===0 ? (
+            <div style={{textAlign:"center",padding:"60px 0",color:MUTED}}>
+              <div style={{fontSize:44,opacity:0.2,marginBottom:12}}>♪</div>
+              <div style={{fontWeight:700,fontSize:16,marginBottom:5,color:NAVY}}>No songs for this Sunday yet</div>
+              <div style={{fontSize:13,marginBottom:22}}>{isAdmin?"Add songs from the library or create new ones.":"No songs added yet — check back later."}</div>
+              {isAdmin && <button style={{...B,background:NAVY,color:WHITE}} onClick={()=>{setEditing(null);setModal(true);}}>Add First Song</button>}
+            </div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:9}}>
+              {weekSongs.map((song,i)=>(
+                <SongCard key={song.id} song={song} index={i} isAdmin={isAdmin}
+                  inLibrary={library.some(l=>l.id===song.id)}
+                  onSaveToLibrary={async s=>{ await saveToLibrary(s); notify("Saved to library! 📚"); }}
+                  onEdit={()=>{ setEditing(song); setModal(true); }}
+                  onDelete={async()=>{ const list=(songs[week]||[]).filter(s=>s.id!==song.id); await saveSongs(week,list); notify("Removed from this Sunday","info"); }}/>
+              ))}
+            </div>
+          )}
+        </>}
+
+        {tab==="schedule" && <TeamSchedule week={week} sched={sched} isAdmin={isAdmin} onSave={saveSched}/>}
+
+        {tab==="library" && (
+          <LibraryTab library={library} isAdmin={isAdmin}
+            onSaveToLibrary={async song=>{ await saveToLibrary(song); notify("Saved to library! 📚"); }}
+            onDeleteFromLibrary={deleteFromLibrary}/>
+        )}
+      </div>
+
+      {isAdmin && modal && (
+        <SongModal
+          initial={editing}
+          library={library}
+          onSave={handleSongSave}
+          onClose={()=>{setModal(false);setEditing(null);}}/>
+      )}
+
+      {toast && (
+        <div style={{position:"fixed",bottom:22,right:22,background:toast.type==="error"?"#C0392B":NAVY,color:WHITE,borderRadius:10,padding:"11px 18px",fontSize:13,fontWeight:700,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,0.2)",maxWidth:300}}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
